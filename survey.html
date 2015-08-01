@@ -1,0 +1,658 @@
+<head>
+<script language="javascript" src="res/jquery-2.0.0.js"></script>
+</head>
+<style>
+img{
+	max-width : 100%;
+	height : 400px;
+}
+
+
+</style>
+
+<body>
+<h1>
+<b>
+Select the image that seems the MOST realistic to you.
+</b>
+</h1>
+<div id="Images">
+<span id="instructions">
+<div style="margin:10px; width:1000px">
+<pre style="word-wrap: break-word; white-space: pre-wrap; font-size:11">                                                                     
+In this HIT, you will be shown pairs of images. Your task is to choose the image that appears the MOST realistic to you by selecting the appropriate button. There are 16 pairs of images in total, and the task concludes with a very brief yes/no questionnaire.
+
+</pre>
+<br>
+<br>
+
+<input type="button" value="Proceed" onClick="initializeSurvey()" id="startButton">
+</div>
+</span>
+<span id="images">
+</span>
+</div>
+
+<form id="formex">
+</form>
+
+
+
+</body>
+
+<script>
+
+var files;
+var allFiles;
+var filesObvious;
+var imageIdx;
+var firstIsReal;
+
+var imagesObject;
+
+var imagesToDisplay;
+
+var randValue;
+
+var orderOfAppearance = "";
+
+var htmlReal_1 = "<td><img src=\"res/jpgpics/";
+var htmlFalse_1 = "<td><img src=\"res/jpgpics/";
+var htmlReal_2 = "\"/></td>";
+var htmlFalse_2 = "\"/></td>";
+
+var radZero = "<tr><td><input type=\"radio\" name=\"rad\" id=\"rad_0\"/>This image</td>";
+var radOne = "<td><input type=\"radio\" name=\"rad\" id=\"rad_1\"/>This image</td></tr>";
+
+var myId = 0;
+
+//Initial settings (visual)
+document.getElementById("Images").setAttribute("style","margin:10px; width:" + ($(window).width() - 50) + "px");
+
+$(window).resize(function() {
+	document.getElementById("Images").setAttribute("style","margin:10px; width:" + ($(window).width() - 50) + "px");
+});
+
+//Tests whether the assignmentId variable is not available (in that case, the user has not yet accepted the HIT, and we must avoid letting the counter variable to be updated).
+if(getURLParameter("assignmentId") == "ASSIGNMENT_ID_NOT_AVAILABLE"){
+	document.getElementById("startButton").disabled = true;
+}
+
+//Functions...
+function createNextButton(){
+	document.getElementById("formex").innerHTML = "<input type=\"button\" value=\"Next\" onClick=\"getNext()\" id=\"next_button\"></input>";
+}
+
+
+function initializeSurvey(){
+
+	$.get("counter.php")	//Using jQuery, run counter script (it runs on server side, increments the counter variable and returns that value, which is assigned to counter_val)
+	.done(function(counter_val){
+	$.get("read_control.php") //Gets the list of control image file paths
+	.done(function(obvious_files){
+		
+		filesObvious = obvious_files.split("\n");
+		
+		myId = parseInt(counter_val);
+		
+		document.getElementById("instructions").innerHTML = ""; //Clears the instructions
+		createNextButton();
+		$.get("read.php") //Gets the list of images
+		.done(function(data){
+			
+			allFiles = data.split("\n"); //Get an array of
+			
+			var myIndex = myId%9; //There are '9' possibilities of groups of images
+			
+			if(myIndex >= 3){
+				myIndex++;
+				if(myIndex >= 7)
+					myIndex++;
+			}
+			
+			var fileIdx = 0;
+			
+			files = new Object();
+			
+			for(var i = 0; i < 12; i++){
+				files[fileIdx] = allFiles[(i*12+myIndex)%144];
+				fileIdx++;
+				
+				if(myIndex < 3)
+					files[fileIdx] = allFiles[i*12+3];
+				else{
+					if(myIndex < 7)				
+						files[fileIdx] = allFiles[i*12+7];
+					else
+						files[fileIdx] = allFiles[i*12+11];
+				}
+				//Calculating the next index...
+				myIndex = (myIndex + 4)%12;
+				fileIdx++;
+				
+			}
+			
+			files["length"] = Object.size(files);
+			
+			randomizeArrayOfImagesPlusObvious();
+			
+			imageIdx = 0;
+			
+			var content = "";
+			
+			var image_1 = buildReal(0);
+			var image_2 = buildFalse(0);
+			
+			randValue = Math.random();
+			
+			if(randValue > 0.5){
+				content = "<tr>" + image_1 + image_2 + "</tr>" + radZero + radOne;
+			}
+			else{
+				content = "<tr>" + image_2 + image_1 + "</tr>" + radZero + radOne;
+			}
+			
+			document.getElementById("images").innerHTML = "<table>" + content + "</table>";
+		
+			if(randValue > 0.5){
+				document.getElementById("rad_0").setAttribute("image",imagesToDisplay[0].urlReal);
+				document.getElementById("rad_1").setAttribute("image",imagesToDisplay[0].urlFalse);
+			}
+			else{
+				document.getElementById("rad_0").setAttribute("image",imagesToDisplay[0].urlFalse);
+				document.getElementById("rad_1").setAttribute("image",imagesToDisplay[0].urlReal);
+			}
+			
+			if(getURLParameter("assignmentId") == "ASSIGNMENT_ID_NOT_AVAILABLE"){
+				//Disabling the radio buttons.
+				document.getElementById("rad_0").disabled = true;
+				document.getElementById("rad_1").disabled = true;
+				
+				//Disabling the "Next" button.
+				document.getElementById("next_button").disabled = true;
+			}
+			imagesObject = new Object();
+			initializeImagesObject();
+		})})
+	});
+	
+	
+}
+
+//Functions that return the image paths ("real" and "unreal" images of the pair - or, in the case of this study, our method's image and another method's image)
+function buildReal(idx){
+	return htmlReal_1 + getPath(imagesToDisplay[idx].urlReal) + htmlReal_2;
+}
+
+function buildFalse(idx){
+	return htmlFalse_1 + getPath(imagesToDisplay[idx].urlFalse) + htmlFalse_2;
+}
+
+function getPath(fileStr){
+	var str_tk = fileStr.split('-');
+	return str_tk[0] + "-" + str_tk[1] + "/" + fileStr;
+}
+
+
+function initializeImagesObject(){
+	for(var i = 0; i < allFiles.length; i++){
+		imagesObject[allFiles[i]] = "unassigned";
+	}
+}
+
+//Gets URL parameter passed when fetching the web page. It allows the Mechanical Turk platform to pass us arguments.
+function getURLParameter(sParam)
+{
+    var sPageURL = window.location.search.substring(1);
+    var sURLVariables = sPageURL.split('&');
+    for (var i = 0; i < sURLVariables.length; i++) 
+    {
+        var sParameterName = sURLVariables[i].split('=');
+        if (sParameterName[0] == sParam) 
+        {
+            return sParameterName[1];
+        }
+    }
+}
+
+function hasChecked(){
+	if(document.getElementById("rad_0").checked == true || document.getElementById("rad_1").checked == true)
+		return true;
+	else
+		return false;
+
+}
+
+function getVal(){ //Can be simplified with a boolean expression...
+	if(document.getElementById("rad_0").checked == true){
+		if(firstIsReal)
+			return true;
+		else
+			return false;
+	}
+	else{
+		if(firstIsReal)
+			return false;
+		else
+			return true;
+	}
+}
+
+//Returns a random integer between min and max.
+function getRandInt(min,max){
+	return Math.round((Math.random())*(max - min) + min);
+}
+
+//Gets position to put next random image in array.
+function getIdx(array,val){
+	var size = array.length;
+	
+	if(array[val].isTaken == false){
+		return val;
+	}
+	else{
+		for(var i = 0; i < size; i++){
+			if(array[i].isTaken == false){
+				return i;
+			}
+		}
+	}
+	return null;
+}
+
+
+//Randomizes the order in which the pairs of images will be displayed to the worker.
+function randomizeArrayOfImages(){
+	
+	var arrSize = files.length/2;
+	
+	imagesToDisplay = new Object();
+	for(var i = 0; i < arrSize; i++){
+		imagesToDisplay[i] = new Object();
+		imagesToDisplay[i].isTaken = false;
+		imagesToDisplay[i].urlReal = "";
+		imagesToDisplay[i].urlFalse = "";
+	}
+	
+	imagesToDisplay["length"] = arrSize;
+	
+	var idx;
+	var val;
+
+	
+	for(var k = 0; k < arrSize; k++){
+		val = getRandInt(0,arrSize - 1);
+		idx = getIdx(imagesToDisplay,val);
+		imagesToDisplay[idx].isTaken = true;
+		imagesToDisplay[idx].urlReal = files[k*2];
+		imagesToDisplay[idx].urlFalse = files[k*2 + 1];
+	}
+}
+
+var control;
+
+//Adds control images to the array of images to display.
+function randomizeArrayOfImagesPlusObvious(){
+	
+
+	var sizeObvious = filesObvious.length/2;
+	var arrSize = files.length/2 + sizeObvious;
+
+	
+	imagesToDisplay = new Object();
+	for(var i = 0; i < arrSize; i++){
+		imagesToDisplay[i] = new Object();
+		imagesToDisplay[i].isTaken = false;
+		imagesToDisplay[i].urlReal = "";
+		imagesToDisplay[i].urlFalse = "";
+	}
+	
+	imagesToDisplay["length"] = arrSize;
+	
+	var idx;
+	var val;
+	
+	//Initialize with "obvious" (control) images
+	
+	var division = arrSize/sizeObvious;
+	
+	control = new Object();
+	control["length"] = sizeObvious;
+	
+	
+	for(var k = 0; k < sizeObvious; k++){
+		control[k] = new Object();
+		control[k].isTaken = false;
+		control[k].urlReal = "";
+		control[k].urlFalse = "";
+	}
+	
+	for(var k = 0; k < sizeObvious; k++){
+		val = getRandInt(0,sizeObvious- 1);
+		idx = getIdx(control,val);
+		control[idx].isTaken = true;
+		control[idx].urlReal = filesObvious[k*2];
+		control[idx].urlFalse = filesObvious[k*2 + 1];
+	}
+	
+	
+	for(var k = 0; k < sizeObvious; k++){
+		val = getRandInt(0,division - 1);
+		idx = k*division + val;
+		imagesToDisplay[idx].isTaken = true;
+		imagesToDisplay[idx].urlReal = control[k].urlReal;
+		imagesToDisplay[idx].urlFalse = control[k].urlFalse;
+	}
+	
+	for(var k = 0; k < arrSize - sizeObvious; k++){
+		val = getRandInt(0,arrSize - 1);
+		idx = getIdx(imagesToDisplay,val);
+		imagesToDisplay[idx].isTaken = true;
+		imagesToDisplay[idx].urlReal = files[k*2];
+		imagesToDisplay[idx].urlFalse = files[k*2 + 1];
+	}
+}
+
+
+
+//Fetches the next pair of images.
+function getNext(){
+	
+	if(hasChecked()){
+			
+			var content = "";
+			
+			if(imageIdx + 1 <= imagesToDisplay.length - 1){ //Tests whether we've reached the end of the main survey.
+				imageIdx += 1;
+				updateImagesObject();
+	
+				
+				var image_1 = buildReal(imageIdx);
+				var image_2 = buildFalse(imageIdx);
+				
+				randValue = Math.random();
+				
+				if(randValue > 0.5){
+					content = "<tr>" + image_1 + image_2 + "</tr>" + radZero + radOne;
+				}
+				else{
+					content = "<tr>" + image_2 + image_1 + "</tr>" + radZero + radOne;
+				}
+				
+				document.getElementById("images").innerHTML = "<table>" + content + "</table>";
+				
+				if(randValue > 0.5){
+					document.getElementById("rad_0").setAttribute("image",imagesToDisplay[imageIdx].urlReal);
+					document.getElementById("rad_1").setAttribute("image",imagesToDisplay[imageIdx].urlFalse);
+				}
+				else{	
+					document.getElementById("rad_0").setAttribute("image",imagesToDisplay[imageIdx].urlFalse);
+					document.getElementById("rad_1").setAttribute("image",imagesToDisplay[imageIdx].urlReal);
+				}
+			}
+			else{ //Displays the "image abilities" survey
+				updateImagesObject();
+				
+				var form = document.getElementById("formex");
+				
+				form.innerHTML = "<input type=\"button\" id=\"submit_button\" onClick=\"sendData()\" value=\"Submit\"></input>"
+				
+				
+				var span = document.getElementById("images");
+				
+				var extra_questions = "<h3>1) Do you often paint, draw, or use 3D modeling software (or do you consider your a \"visual\" person)?</h3>";
+				
+				extra_questions = extra_questions + "<input type=\"radio\" name=\"is_visual\" id=\"is_visual_yes\">Yes.</input><br><br><input type=\"radio\" name=\"is_visual\" id=\"is_visual_no\">No.</input>";
+				 
+				extra_questions = extra_questions + "<br><br>";
+				extra_questions = extra_questions + "<h3>2) Do you have normal color vision?</h3>";
+				
+				extra_questions = extra_questions + "<input type=\"radio\" name=\"has_color_vision\" id=\"has_color_vision_yes\">Yes.</input><br><br><input type=\"radio\" name=\"has_color_vision\" id=\"has_color_vision_no\">No.</input>";
+				 
+				extra_questions = extra_questions + "<br><br>";
+				extra_questions = extra_questions + "<h3>3) Gender:</h3>";
+				
+				extra_questions = extra_questions + "<input type=\"radio\" name=\"gender\" id=\"gender_male\">Male.</input><br><br><input type=\"radio\" name=\"gender\" id=\"gender_female\">Female.</input><br><br><input type=\"radio\" name=\"gender\" id=\"gender_no_answer\">I do not wish to state.</input>";				
+
+				extra_questions = extra_questions + "<br><br>";
+				extra_questions = extra_questions + "<h3>4) Age:</h3>";
+
+				extra_questions = extra_questions + "<input type=\"radio\" name=\"age\" id=\"age_zero\">Less than 25.</input><br><br><input type=\"radio\" name=\"age\" id=\"age_one\">Between 25 and 50.</input><br><br><input type=\"radio\" name=\"age\" id=\"age_two\">Between 50 and 75.</input><br><br><input type=\"radio\" name=\"age\" id=\"age_three\">More than 75.</input>";	
+				 
+				extra_questions = extra_questions + "<br><br>";
+				extra_questions = extra_questions + "<h3>5) Which of these images looks more realistic to you?</h3>";
+				 
+				extra_questions = extra_questions + "<br><br><table><tbody><tr><td>";
+				
+				var result_coin = flipACoin();
+				
+				if(result_coin){
+					extra_questions = extra_questions + "<img src=\"res/lines-correct.png\"></img></td>";
+					extra_questions = extra_questions + "<td><img src=\"res/lines-incorrect.png\"></img></td></tr>";
+					extra_questions = extra_questions + "<tr><td><input type=\"radio\" name=\"test_perspective\" id=\"test_perspective_correct\">This image.</input></td><td><input type=\"radio\"name=\"test_perspective\" id=\"test_perspective_incorrect\">This image.</input></td></tr></tbody></table>"
+					
+				}
+				else{
+					extra_questions = extra_questions + "<img src=\"res/lines-incorrect.png\"></img></td>";				
+					extra_questions = extra_questions + "<td><img src=\"res/lines-correct.png\"></img></td></tr>";
+					extra_questions = extra_questions + "<tr><td><input type=\"radio\" name=\"test_perspective\" id=\"test_perspective_incorrect\">This image.</input></td><td><input type=\"radio\"name=\"test_perspective\" id=\"test_perspective_correct\">This image.</input></td></tr></tbody></table>";
+					
+				}
+				
+	
+				
+				extra_questions = extra_questions + "<br><br>";
+				extra_questions = extra_questions + "<h3>6) Assuming the following images are spheres, which looks most realistic?</h3>";
+
+				extra_questions = extra_questions + "<br><br><table><tbody><tr><td>";
+				
+				result_coin = flipACoin();
+				
+				if(result_coin){
+					extra_questions = extra_questions + "<img src=\"res/sphere.png\"></img></td>";
+					extra_questions = extra_questions + "<td><img src=\"res/lingrad.png\"></img></td></tr>";
+					
+					extra_questions = extra_questions + "<tr><td><input type=\"radio\" name=\"test_grad\" id=\"test_grad_sphere\">This image.</input></td><td><input type=\"radio\"name=\"test_grad\" id=\"test_grad_lin_grad\">This image.</input></td></tr></tbody></table>";
+				}
+				else{
+					extra_questions = extra_questions + "<img src=\"res/lingrad.png\"></img></td>";
+					extra_questions = extra_questions + "<td><img src=\"res/sphere.png\"></img></td></tr>";
+					extra_questions = extra_questions + "<tr><td><input type=\"radio\" name=\"test_grad\" id=\"test_grad_lin_grad\">This image.</input></td><td><input type=\"radio\"name=\"test_grad\" id=\"test_grad_sphere\">This image.</input></td></tr></tbody></table>";
+				}				
+				extra_questions = extra_questions + "<br><br>";
+				
+				extra_questions = extra_questions + "<h3>7)(Optional) Please, share any comments you'd like, preferrably about the cues that helped in you pick the images:<br><br>";
+				
+				extra_questions = extra_questions + "<textarea id=\"comment_area\" rows=\"4\" cols=\"50\"></textarea>";
+
+				extra_questions = extra_questions + "<br><br>";
+				
+				span.innerHTML = extra_questions;
+				
+
+			}
+			
+	}
+	else{
+		alert("Please, check an image before moving to the next...");
+	}
+}
+
+function flipACoin(){
+	return Math.random() >= 0.5;
+}
+
+function updateImagesObject(){//Updates the results array with the user's selection for a pair.
+			var firstRad = document.getElementById("rad_0");
+			var secondRad = document.getElementById("rad_1");
+
+			imagesObject[firstRad.getAttribute("image")] = firstRad.checked;
+			imagesObject[secondRad.getAttribute("image")] = secondRad.checked;
+			
+			orderOfAppearance = orderOfAppearance + firstRad.getAttribute("image") + ";" + secondRad.getAttribute("image") + ";"; 
+			
+			
+			
+}
+
+//Bundles up all the information to be submitted to Turk and sends it.
+function sendData(){
+	
+	if(completed_form()){
+		
+		update_submission_data();
+		
+		imagesObject["assignmentId"] = getURLParameter("assignmentId");
+		imagesObject["orderOfAppearance"] = orderOfAppearance;
+		imagesObject["comments"] = document.getElementById("comment_area").value;
+		
+		//TODO: Select the right URL depending of the situation!!!
+		//Submission to mechanical turk:
+		submitAnswer("https://www.mturk.com/mturk/externalSubmit",imagesObject);
+
+
+		//Submission to sandbox:
+		//submitAnswer("https://workersandbox.mturk.com/mturk/externalSubmit",imagesObject);
+		
+	}
+	else{
+		alert("Please, complete all the form questions.")
+	}
+}
+
+function completed_form(){
+	var question_one = document.getElementById("is_visual_yes").checked || document.getElementById("is_visual_no").checked;
+	
+	if(!question_one)
+		return false;
+	
+	var question_two = document.getElementById("has_color_vision_yes").checked || document.getElementById("has_color_vision_no").checked;
+	
+	if(!question_two)
+		return false;
+
+	var question_three = document.getElementById("gender_male").checked || document.getElementById("gender_female").checked || document.getElementById("gender_no_answer").checked;
+	
+	if(!question_three)
+		return false;
+	
+	var question_four = document.getElementById("age_zero").checked || document.getElementById("age_one").checked || document.getElementById("age_two").checked || document.getElementById("age_three").checked;
+	
+	if(!question_four)
+		return false;
+	
+	var question_five = document.getElementById("test_perspective_correct").checked || document.getElementById("test_perspective_incorrect").checked;
+	
+	if(!question_five)
+		return false;
+
+	var question_six = document.getElementById("test_grad_sphere").checked || document.getElementById("test_grad_lin_grad").checked;
+
+	return question_six;
+}
+
+
+
+
+
+
+
+
+
+
+
+function update_submission_data(){
+
+	if(document.getElementById("is_visual_yes").checked == true){
+		imagesObject["is_visual_person"] = true;
+	}
+	else{
+		imagesObject["is_visual_person"] = false;	
+	}
+	
+	if(document.getElementById("has_color_vision_yes").checked == true){
+
+		imagesObject["has_normal_color_vision"] = true;
+	}
+	else{
+		imagesObject["has_normal_color_vision"] = false;		
+	}
+	
+	if(document.getElementById("gender_male").checked == true){
+		imagesObject["gender"] = "male";
+	}
+	else{
+		if(document.getElementById("gender_female").checked == true){
+			imagesObject["gender"] = "female";
+		}
+		else{
+				imagesObject["gender"] = "no_answer";
+		}
+	}
+
+	if(document.getElementById("age_zero").checked == true){
+		imagesObject["age"] = "less_25";
+	}
+	else{
+		if(document.getElementById("age_one").checked == true){
+			imagesObject["age"] = "between_25_50";
+		}
+		else{
+			if(document.getElementById("age_two").checked == true){
+				imagesObject["age"] = "between_50_75";
+			}
+			else{
+					imagesObject["age"] = "more_75";
+			}
+		}
+	}
+
+	if(document.getElementById("test_perspective_correct").checked == true){
+		imagesObject["got_correct_perspective"] = true;
+	}
+	else{
+		imagesObject["got_correct_perspective"] = false;	
+	}
+
+	if(document.getElementById("test_grad_sphere").checked == true){
+		imagesObject["got_correct_sphere"] = true;
+	}
+	else{
+		imagesObject["got_correct_sphere"] = false;	
+	}
+}
+
+
+
+
+function submitAnswer(path, params, method){
+    method = method || "post"; // Set method to post by default if not specified.
+
+    var form = document.createElement("form");
+    form.setAttribute("method", method);
+    form.setAttribute("action", path);
+
+    for(var key in params) {
+        if(params.hasOwnProperty(key)) {
+            var hiddenField = document.createElement("input");
+            hiddenField.setAttribute("type", "hidden");
+            hiddenField.setAttribute("name", key);
+            hiddenField.setAttribute("value", params[key]);
+
+            form.appendChild(hiddenField);
+         }
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+Object.size = function(obj) {
+    var size = 0, key;
+    for (key in obj) {
+        if (obj.hasOwnProperty(key)) size++;
+    }
+    return size;
+};
+
+</script>
